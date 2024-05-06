@@ -1,0 +1,14 @@
+version: '3'
+services:
+  unfoldedcircle-mythtv:
+    container_name: unfoldedcircle-mythtv
+    build:
+      context: .
+    environment:
+      UC_LOG_LEVEL: "debug"
+      UC_DISABLE_MDNS_PUBLISH: "true"
+      INTG_MYTHTV_HOST: "mythtv"
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - 9090:9090

@@ -1,0 +1,18 @@
+{
+	"driver_id": "mythtv_driver",
+	"version": "0.1.0",
+	"min_core_api": "0.7.0",
+	"name": { "en": "MythTV" },
+	"icon": "uc:integration",
+	"description": {
+		"en": "Control your MythTV with Remote Two."
+	},
+	"developer": {
+		"name": "Ian Campbell",
+		"email": "ijc@hellion.org.uk",
+		"url": "https://TBD"
+	},
+	"home_page": "https://TBD",
+	"_setup_data_schema": {},
+	"release_date": "2024-05-06"
+}

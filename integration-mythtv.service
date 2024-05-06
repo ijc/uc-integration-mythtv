@@ -1,0 +1,17 @@
+[Unit]
+Description=MythTV Integration for Unfolded Circle Remote 2
+Requires=mythtv-frontend.service
+
+[Service]
+Type=simple
+WorkingDirectory=/usr/local/integration-mythtv
+ExecStart=/usr/local/integration-mythtv/venv/bin/python3 ./intg-mythtv/driver.py
+Restart=on-failure
+#User=mythtv
+Environment=UC_CONFIG_HOME=./config
+Environment=UC_INTEGRATION_HTTP_PORT=9090
+Environment=UC_DISABLE_MDNS_PUBLISH=false
+Environment=INTG_MYTHTV_NAME=%H
+
+[Install]
+WantedBy=multi-user.target
