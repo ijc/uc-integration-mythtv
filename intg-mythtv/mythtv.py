@@ -14,6 +14,7 @@ import subprocess
 from dataclasses import dataclass
 from subprocess import DEVNULL
 
+import ucapi
 from MythTV.services_api.send import Send
 from retry import retry
 
@@ -154,7 +155,7 @@ class MythTV(Send):
         """
         if command not in self._commands:
             _LOG.error("command: %s not found", command)
-            return False
+            return ucapi.StatusCodes.NOT_FOUND
 
         action = self._commands[command]
 
@@ -169,7 +170,7 @@ class MythTV(Send):
                 resp = self.send("Frontend/SendKey", jsondata=jsondata)
             except (RuntimeError, RuntimeWarning) as e:
                 _LOG.error("SendKey failed: %s", e)
-                return False
+                return ucapi.StatusCodes.SERVER_ERROR
         else:
             _LOG.debug("command %s mapped to action %s", action, action.action)
 
@@ -178,10 +179,13 @@ class MythTV(Send):
                 resp = self.send("Frontend/SendAction", jsondata=jsondata)
             except (RuntimeError, RuntimeWarning) as e:
                 _LOG.error("SendAction failed: %s", e)
-                return False
+                return ucapi.StatusCodes.SERVER_ERROR
 
         _LOG.debug("response: %s", json.dumps(resp))
-        return resp["bool"]
+        if not resp["bool"]:
+            return ucapi.StatusCodes.SERVER_ERROR
+
+        return ucapi.StatusCodes.OK
 
 
 def run_system_command(command: str):

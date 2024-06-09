@@ -77,9 +77,7 @@ async def remote_cmd_handler(entity: ucapi.Remote, cmd_id: str, params: dict[str
             # delay = params.get("delay", 0)
             # hold = params.get("hold", 0)
 
-            if not mtv.run_command(command):
-                _LOG.error("command: %s failed", cmd_id)
-                return ucapi.StatusCodes.BAD_REQUEST
+            return mtv.run_command(command)
 
         # case remote.Commands.SEND_CMD_SEQUENCE:
         #     sequence = params.get("sequence")
@@ -92,8 +90,6 @@ async def remote_cmd_handler(entity: ucapi.Remote, cmd_id: str, params: dict[str
         case _:
             _LOG.warning("Unsupported command: %s", cmd_id)
             return ucapi.StatusCodes.BAD_REQUEST
-
-    return ucapi.StatusCodes.OK
 
 
 def create_ui_pages(commands):
