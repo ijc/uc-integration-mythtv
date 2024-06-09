@@ -121,9 +121,12 @@ def create_button_mapping(commands):
         (Buttons.NEXT, "SEEKFFWD", "NEXTRACK"),
         # (Buttons.POWER, "", None),
     ]:
+        short_cmd = mythtv.map_action_name_to_uc_simple_command(short_cmd)
         if short_cmd in commands:
-            if long_cmd not in commands:
-                long_cmd = None
+            if long_cmd is not None:
+                long_cmd = mythtv.map_action_name_to_uc_simple_command(long_cmd)
+                if long_cmd not in commands:
+                    long_cmd = None
             btn = create_btn_mapping(btn, short_cmd, long_cmd)
             button_mapping.append(btn)
 
