@@ -1,4 +1,4 @@
-.PHONY: all lints pylint check-flake8 check-isort check-black format venv venv-test
+.PHONY: all lints pylint check-pylint check-flake8 check-isort check-black format venv venv-test
 
 VENV ?= ./venv
 VENV_PYTHON ?= $(VENV)/bin/python3
@@ -9,7 +9,7 @@ lints: pylint check-flake8 check-isort check-black
 
 format: isort black
 
-pylint:
+check-pylint pylint:
 	$(VENV_PYTHON) -m pylint intg-mythtv
 check-flake8:
 	$(VENV_PYTHON) -m flake8 intg-mythtv --count --show-source --statistics
@@ -26,7 +26,7 @@ black:
 
 venv:
 	python3 -m venv --system-site-packages --prompt intg-mythtv $(VENV)
-	$(VENV)/bin//pip3 install -r requirements.txt
+	$(VENV)/bin/pip3 install -r requirements.txt
 
 venv-test: venv
 	$(VENV)/bin/pip3 install -r test-requirements.txt

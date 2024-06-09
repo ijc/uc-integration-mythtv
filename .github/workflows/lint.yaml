@@ -1,0 +1,21 @@
+name: lint
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        linter: ["pylint", "flake8", "black", "isort"]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install MythTV Python bindings
+      run: |
+        sudo add-apt-repository -y ppa:mythbuntu/35
+        sudo apt-get install -y --no-install-recommends libmyth-python
+    - name: Make venv
+      run: make venv-test
+    - name: Check the code with ${{ matrix.linter }}
+      run: |
+        make check-${{ matrix.linter }}
