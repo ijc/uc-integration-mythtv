@@ -45,8 +45,6 @@ async def remote_cmd_handler(entity: ucapi.Remote, cmd_id: str, params: dict[str
     :param params: optional command parameters
     :return: status of the command
     """
-    print(f"Got {entity.id} command request: {cmd_id}")
-
     _LOG.info("command: %s %s", cmd_id, params if params else "")
 
     match cmd_id:
