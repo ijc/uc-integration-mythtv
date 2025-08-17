@@ -34,6 +34,13 @@ async def on_connect():
     await api.set_device_state(ucapi.DeviceStates.CONNECTED)  # just to make sure the device state is set
 
 
+@api.listens_to(ucapi.Events.SUBSCRIBE_ENTITIES)
+async def on_subscribe_entities(entity_ids) -> None:
+    for entity_id in entity_ids:
+        # Assumes that the MythTV device is always on
+        api.configured_entities.update_attributes(entity_id, {remote.Attributes.STATE: remote.States.ON})
+
+
 async def remote_cmd_handler(entity: ucapi.Remote, cmd_id: str, params: dict[str, Any] | None) -> ucapi.StatusCodes:
     """
     Remote command handler.
