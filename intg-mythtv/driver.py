@@ -21,7 +21,7 @@ from ucapi import Remote, remote
 from ucapi.ui import Buttons, Size, UiPage, create_btn_mapping, create_ui_text
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
-_LOOP = asyncio.get_event_loop()
+_LOOP = asyncio.new_event_loop()
 
 # Global variables
 api = ucapi.IntegrationAPI(_LOOP)
