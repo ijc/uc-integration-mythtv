@@ -9,6 +9,7 @@ Using Frontend Services API: https://www.mythtv.org/wiki/Frontend_Service
 
 import logging
 from dataclasses import dataclass
+import json
 
 import requests
 from retry import retry
@@ -22,6 +23,9 @@ class Command:
 
     action: str
     """The MythTV Action name"""
+
+    key: str | None
+    """The MythTV Key name"""
 
     desc: str
     """Description"""
@@ -68,6 +72,17 @@ COMMAND_MAP = {
 """Known mappings per documented recommendations"""
 
 
+ACTION_TO_SEND_KEY_MAP = {
+    "UP": "Up",
+    "DOWN": "Down",
+    "LEFT": "Left",
+    "RIGHT": "Right",
+    "SELECT": "Enter",
+    "ESCAPE": "Escape",
+}
+"""Maps SendAction commands to SendKey keys"""
+
+
 def map_action_name_to_uc_simple_command(action: str) -> str:
     """
     Map from MythTV Action to valid UC Remote simple command name.
@@ -102,7 +117,11 @@ class MythTV:
         actions = self._get_action_list()
 
         self._commands = {
-            map_action_name_to_uc_simple_command(action): Command(action, description)
+            map_action_name_to_uc_simple_command(action): Command(
+                action,
+                ACTION_TO_SEND_KEY_MAP.get(action),
+                description
+            )
             for (action, description) in actions["FrontendActionList"]["ActionList"].items()
         }
 
@@ -136,16 +155,31 @@ class MythTV:
             return False
 
         command = self._commands[command]
-        _LOG.debug("command %s mapped to action %s", command, command.action)
 
-        request = {"action": command.action}
-        resp = requests.post(
-            f"http://{self._host}:{self._port}/Frontend/SendAction",
-            headers={"Accept": "application/json"},
-            json=request,
-            timeout=5,
-        )
+        if command.key is not None:
+            _LOG.debug(
+                "command %s mapped to key %s (action:%s)",
+                command,
+                command.key,
+                command.action
+            )
+            resp = requests.post(
+                f"http://{self._host}:{self._port}/Frontend/SendKey?Key={command.key}",
+                headers={"Accept": "application/json"},
+                timeout=5,
+            )
+        else:
+            _LOG.debug("command %s mapped to action %s", command, command.action)
+
+            request = {"action": command.action}
+            resp = requests.post(
+                f"http://{self._host}:{self._port}/Frontend/SendAction",
+                headers={"Accept": "application/json"},
+                json=request,
+                timeout=5,
+            )
         resp.raise_for_status()
         resp = resp.json()
+        _LOG.debug(f"response: {json.dumps(resp)}")
 
         return resp["bool"]
