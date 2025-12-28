@@ -31,6 +31,7 @@ class Command:
     """Description"""
 
 
+# Map from MythTV Action to valid UC Remote simple command name.
 COMMAND_MAP = {
     "0": "DIGIT_0",
     "1": "DIGIT_1",
