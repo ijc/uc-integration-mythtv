@@ -169,7 +169,7 @@ async def main():
         identifier=device.id,
         name=device.name,
         features=[
-            # remote.Features.SEND_CMD,
+            remote.Features.SEND_CMD,
         ],
         attributes={},
         button_mapping=button_mapping,
