@@ -12,17 +12,34 @@ import logging
 import shlex
 import subprocess
 from dataclasses import dataclass
+from enum import Enum
 from subprocess import DEVNULL
+from typing import Tuple
 
 import ucapi
 from MythTV.services_api.send import Send
+from mythtv_legacy_remote import legacy_remote_map_action_name_to_uc_simple_command
 from retry import retry
+from ucapi import media_player
 
 _LOG = logging.getLogger(__name__)
 
 
+class MythTVCommandKind(Enum):
+    """The kind of a command."""
+
+    MEDIA_PLAYER = "media_player"
+    """Command is a UC media player command"""
+
+    SIMPLE = "simple"
+    """Command is a UC simple command"""
+
+    SYSTEM_COMMAND = "system_command"
+    """Command is a system command"""
+
+
 @dataclass
-class Command:
+class MythTVCommand:
     """Represents a MythTV Command/Action."""
 
     action: str
@@ -34,52 +51,95 @@ class Command:
     desc: str
     """Description"""
 
+    kind: MythTVCommandKind
+    """The Kind of Command this is"""
 
-FRONTEND_RESTART_ACTION = "RESTART_FRONTEND"
 
-# Map from MythTV Action to valid UC Remote simple command name.
-COMMAND_MAP = {
-    "0": "DIGIT_0",
-    "1": "DIGIT_1",
-    "2": "DIGIT_2",
-    "3": "DIGIT_3",
-    "4": "DIGIT_4",
-    "5": "DIGIT_5",
-    "6": "DIGIT_6",
-    "7": "DIGIT_7",
-    "8": "DIGIT_8",
-    "9": "DIGIT_9",
-    "UP": "CURSOR_UP",
-    "DOWN": "CURSOR_DOWN",
-    "LEFT": "CURSOR_LEFT",
-    "RIGHT": "CURSOR_RIGHT",
-    "SELECT": "CURSOR_ENTER",
-    "BACK": "BACK",
-    "VOLUMEDOWN": "VOLUME_DOWN",
-    "VOLUMEUP": "VOLUME_UP",
-    "MUTE": "MUTE_TOGGLE",
-    "STOP": "STOP",
-    "SEEKFFWD": "FAST_FORWARD",
-    "SEEKRWND": "REWIND",
+FRONTEND_RESTART_SYSTEM_COMMAND = "RESTART_FRONTEND"
+
+# curl -H 'Accept: application/json'  http://mythtv:6547/Frontend/GetActionList  | jq .FrontendActionList.ActionList
+# https://github.com/unfoldedcircle/integration-python-library/blob/main/ucapi/media_player.py
+MYTHTV_ACTION_TO_UC_MEDIA_PLAYER_COMMAND_MAP: dict[str, media_player.Commands] = {
+    #: media_player.Commands.ON,
+    #: media_player.Commands.OFF,
+    #: media_player.Commands.TOGGLE,
+    #: media_player.Commands.PLAY_PAUSE,
+    "STOP": media_player.Commands.STOP,
+    "SEEKRWND": media_player.Commands.PREVIOUS,
+    "SEEKFFWD": media_player.Commands.NEXT,
+    "FFWD": media_player.Commands.FAST_FORWARD,
+    "RWND": media_player.Commands.REWIND,
+    #: media_player.Commands.SEEK, -- takes a param
+    #: media_player.Commands.VOLUME, -- takes a param
+    "VOLUMEDOWN": media_player.Commands.VOLUME_DOWN,
+    "VOLUMEUP": media_player.Commands.VOLUME_UP,
+    "MUTE": media_player.Commands.MUTE_TOGGLE,
+    #: media_player.Commands.MUTE,
+    #: media_player.Commands.UNMUTE,
+    # "": media_player.Commands.REPEAT, -- takes a param
+    # "": media_player.Commands.SHUFFLE, -- takes a param
+    "CHANNELDOWN": media_player.Commands.CHANNEL_UP,
+    "CHANNELUP": media_player.Commands.CHANNEL_DOWN,
+    "UP": media_player.Commands.CURSOR_UP,
+    "DOWN": media_player.Commands.CURSOR_DOWN,
+    "LEFT": media_player.Commands.CURSOR_LEFT,
+    "RIGHT": media_player.Commands.CURSOR_RIGHT,
+    "SELECT": media_player.Commands.CURSOR_ENTER,
+    "0": media_player.Commands.DIGIT_0,
+    "1": media_player.Commands.DIGIT_1,
+    "2": media_player.Commands.DIGIT_2,
+    "3": media_player.Commands.DIGIT_3,
+    "4": media_player.Commands.DIGIT_4,
+    "5": media_player.Commands.DIGIT_5,
+    "6": media_player.Commands.DIGIT_6,
+    "7": media_player.Commands.DIGIT_7,
+    "8": media_player.Commands.DIGIT_8,
+    "9": media_player.Commands.DIGIT_9,
+    "MENURED": media_player.Commands.FUNCTION_RED,
+    "MENUGREEN": media_player.Commands.FUNCTION_GREEN,
+    "MENUYELLOW": media_player.Commands.FUNCTION_YELLOW,
+    "MENUBLUE": media_player.Commands.FUNCTION_BLUE,
+    "Main Menu": media_player.Commands.HOME,
+    "MENU": media_player.Commands.MENU,
+    #: media_player.Commands.CONTEXT_MENU,
+    "GUIDE": media_player.Commands.GUIDE,
+    "INFO": media_player.Commands.INFO,
+    # "BACK": media_player.Commands.BACK,
+    "ESCAPE": media_player.Commands.BACK,
+    #: media_player.Commands.SELECT_SOURCE, -- takes a param
+    #: media_player.Commands.SELECT_SOUND_MODE, -- takes a param
+    #: media_player.Commands.RECORD,
+    "TV Recording Playback": media_player.Commands.MY_RECORDINGS,
+    "Live TV": media_player.Commands.LIVE,
+    "EJECT": media_player.Commands.EJECT,
+    #: media_player.Commands.OPEN_CLOSE,
+    #: media_player.Commands.AUDIO_TRACK,
+    "TOGGLESUBTITLE": media_player.Commands.SUBTITLE,
+    #: media_player.Commands.SETTINGS,
+    #: media_player.Commands.SEARCH,
+}
+"""Map from MythTV Action to valid UC MediaPlayer command name."""
+
+MYTHTV_ACTION_TO_MEDIA_PLAYER_SIMPLE_COMMAND_MAP: dict[str, str] = {
     # Too long
     "3DTOPANDBOTTOMDISCARD": "3DTOPANDBOTTOMDISCAR",
-    "CHANNEL_RECORDING_PRIORITIES": "RECORDING_PRIOS",
-    "MANAGE_RECORDING_RULES": "MANAGE_REC_RULES",
-    "MANAGE_RECORDINGS___FIX_CONFLICTS": "MANAGE_RECSCONFLICTS",
-    "PROGRAM_RECORDING_PRIORITIES": "MANAGE_REC_PRIOS",
+    "Channel Recording Priorities": "RECORDING_PRIOS",
+    "Manage Recording Rules": "MANAGE_REC_RULES",
+    "Manage Recordings / Fix Conflicts": "MANAGE_RECSCONFLICTS",
+    "Program Recording Priorities": "MANAGE_REC_PRIOS",
     "SWITCHTOPLAYLISTEDITORGALLERY": "PLIST_ED_GALLERY",
     "SWITCHTOPLAYLISTEDITORTREE": "PLIST_ED_TREE",
-    "SELECT_MUSIC_PLAYLISTS": "SELECT_MUSIC_PLIST",
-    "SHOW_MUSIC_MINIPLAYER": "SHOW_MUSIC_MINI",
-    "TV_RECORDING_DELETION": "RECORDING_DELETE",
-    "TV_RECORDING_PLAYBACK": "RECORDING_PLAYBACK",
-    "TOGGLE_SHOW_WIDGET_BORDERS": "SHOW_WIDGET_BORDERS",
-    "TOGGLE_SHOW_WIDGET_NAMES": "SHOW_WIDGET_NAMES",
+    "Select music playlists": "SELECT_MUSIC_PLIST",
+    "Show Music Miniplayer": "SHOW_MUSIC_MINI",
+    "TV Recording Deletion": "RECORDING_DELETE",
+    # "TV Recording Playback": "RECORDING_PLAYBACK",
+    "Toggle Show Widget Borders": "SHOW_WIDGET_BORDERS",
+    "Toggle Show Widget Names": "SHOW_WIDGET_NAMES",
 }
-"""Known mappings per documented recommendations"""
+"""Map from MythTV Action to valid UC MediaPlayer simple command name."""
 
 
-ACTION_TO_SEND_KEY_MAP = {
+MYTHTV_SEND_ACTION_TO_SEND_KEY_MAP = {
     "UP": "Up",
     "DOWN": "Down",
     "LEFT": "Left",
@@ -90,23 +150,27 @@ ACTION_TO_SEND_KEY_MAP = {
 """Maps SendAction commands to SendKey keys"""
 
 
-def map_action_name_to_uc_simple_command(action: str) -> str:
+def map_mythtv_action_name_to_uc_command(action: str) -> Tuple[media_player.Commands | str, MythTVCommandKind]:
     """
-    Map from MythTV Action to valid UC Remote simple command name.
+    Map from MythTV Action to valid UC Media Player command name.
 
-    https://github.com/unfoldedcircle/core-api/blob/main/doc/entities/entity_remote.md#simple-commands
+    https://github.com/unfoldedcircle/core-api/blob/main/doc/entities/entity_media_player.md#commands
     """
-    command = action.upper().replace(" ", "_").replace("/", "_")
+    if action in MYTHTV_ACTION_TO_UC_MEDIA_PLAYER_COMMAND_MAP:
+        media_player_command = MYTHTV_ACTION_TO_UC_MEDIA_PLAYER_COMMAND_MAP[action]
+        assert len(media_player_command) <= 20, f"mapped media player command {media_player_command} too long"
+        return media_player_command, MythTVCommandKind.MEDIA_PLAYER
 
-    if command in COMMAND_MAP:
-        assert len(COMMAND_MAP[command]) <= 20, f"mapped {command} too long"
-        return COMMAND_MAP[command]
+    if action in MYTHTV_ACTION_TO_MEDIA_PLAYER_SIMPLE_COMMAND_MAP:
+        command = MYTHTV_ACTION_TO_MEDIA_PLAYER_SIMPLE_COMMAND_MAP[action]
+        assert len(command) <= 20, f"mapped simple {command} too long"
+    else:
+        command = action.upper().replace(" ", "_").replace("/", "_")
+        if len(command) > 20:
+            _LOG.warning("Action %s truncated", action)
+            command = command[:20]
 
-    if len(command) > 20:
-        _LOG.warning("Command %s truncated", command)
-        command = command[:20]
-
-    return command
+    return command, MythTVCommandKind.SIMPLE
 
 
 class MythTV(Send):
@@ -123,58 +187,86 @@ class MythTV(Send):
 
         actions = self._get_action_list()
 
-        self._commands = {
-            map_action_name_to_uc_simple_command(action): Command(
-                action, ACTION_TO_SEND_KEY_MAP.get(action), description
+        def make_mythtv_command(action: str, description: str) -> Tuple[media_player.Commands | str, MythTVCommand]:
+            uc_command, kind = map_mythtv_action_name_to_uc_command(action)
+            return (
+                uc_command,
+                MythTVCommand(action, MYTHTV_SEND_ACTION_TO_SEND_KEY_MAP.get(action), description, kind),
             )
-            for (action, description) in actions["FrontendActionList"]["ActionList"].items()
-        }
+
+        self._commands: dict[media_player.Commands | str, MythTVCommand] = dict(
+            [
+                make_mythtv_command(action, description)
+                for (action, description) in actions["FrontendActionList"]["ActionList"].items()
+            ]
+        )
+
+        self._legacy_remote_command_map: dict[str, str] = dict(
+            filter(
+                lambda kv: kv[0] != kv[1],
+                [
+                    (legacy_remote_map_action_name_to_uc_simple_command(mythtv_command.action), cmd_id)
+                    for cmd_id, mythtv_command in self._commands.items()
+                ],
+            )
+        )
+        # for k, v in self._legacy_remote_command_map.items():
+        #     print(f"Legacy: {k:20} -> {v}")
 
         if frontend_restart_command is not None:
             _LOG.info("Frontend Restart Command: %s", frontend_restart_command)
-            self._commands[FRONTEND_RESTART_ACTION] = Command(frontend_restart_command, None, "Restart mythfrontend")
+            self._commands[FRONTEND_RESTART_SYSTEM_COMMAND] = MythTVCommand(
+                frontend_restart_command, None, "Restart mythfrontend", MythTVCommandKind.SYSTEM_COMMAND
+            )
 
     @retry(RuntimeError, tries=30, delay=2)
     def _get_action_list(self):
         """Fetch the actions supported by this host."""
         return self.send("Frontend/GetActionList")
 
-    def commands(self) -> dict[str, Command]:
+    def commands(self) -> dict[str, MythTVCommand]:
         """
         Return a mapping of the available actions.
 
-        Keys are action names, values are descriptions.
+        Keys are Unfolded circle command names, values are MythTVCommands.
         """
         return self._commands
 
-    def run_command(self, command):
+    def run_command(self, cmd_id: str):
         """
         Run the named action.
 
         Returns true if the action succeeded.
         """
-        if command not in self._commands:
-            _LOG.error("command: %s not found", command)
+        command = self._commands.get(cmd_id)
+        if not command:
+            if (mapped_legacy_remote_command := self._legacy_remote_command_map.get(cmd_id)) is not None:
+                _LOG.warning("Mapped legacy remote command %s to UC command %s", cmd_id, mapped_legacy_remote_command)
+                cmd_id = mapped_legacy_remote_command
+                command = self._commands.get(cmd_id)
+
+        if not command:
+            _LOG.error("command: %s not found", cmd_id)
             return ucapi.StatusCodes.NOT_FOUND
 
-        action = self._commands[command]
+        _LOG.info("UC commmand %s mapped to %s", cmd_id, command)
 
-        if command == FRONTEND_RESTART_ACTION:
-            _LOG.debug("commmand %s mapped to restart frontend: %s", action, action.action)
-            resp = run_system_command(action.action)
-        elif action.key is not None:
-            _LOG.debug("command %s mapped to key %s (action:%s)", action, action.key, action.action)
+        if command.kind == MythTVCommandKind.SYSTEM_COMMAND:
+            _LOG.debug("system command: %s", command.action)
+            resp = run_system_command(command.action)
+        elif command.key is not None:
+            _LOG.debug("SendKey %s (action:%s)", command.key, command.action)
 
-            jsondata = {"key": action.key}
+            jsondata = {"key": command.key}
             try:
                 resp = self.send("Frontend/SendKey", jsondata=jsondata)
             except (RuntimeError, RuntimeWarning) as e:
                 _LOG.error("SendKey failed: %s", e)
                 return ucapi.StatusCodes.SERVER_ERROR
         else:
-            _LOG.debug("command %s mapped to action %s", action, action.action)
+            _LOG.debug("SendAction %s", command.action)
 
-            jsondata = {"action": action.action}
+            jsondata = {"action": command.action}
             try:
                 resp = self.send("Frontend/SendAction", jsondata=jsondata)
             except (RuntimeError, RuntimeWarning) as e:
