@@ -19,6 +19,10 @@ $ make venv # or venv-test
 $ source venv/bin/activate
 ```
 
+Ensure you have the MythTV Python bindings too. There are not listed
+in `requirements.txt`, they should be available wherever you got your
+MythTV (packages or installed from source).
+
 ### Configuration
 
 The integration is configured via environment variables:

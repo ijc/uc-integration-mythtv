@@ -7,6 +7,7 @@ Using Frontend Services API: https://www.mythtv.org/wiki/Frontend_Service
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
+from MythTV.services_api.send import Send
 import logging
 from dataclasses import dataclass
 import json
@@ -103,7 +104,7 @@ def map_action_name_to_uc_simple_command(action: str) -> str:
     return command
 
 
-class MythTV:
+class MythTV(Send):
     """Control a MythTV frontend."""
 
     def __init__(
@@ -112,8 +113,8 @@ class MythTV:
         port: int = 6547,
     ):
         """Initialize the object."""
-        self._host = host
-        self._port = port
+
+        super().__init__(host=host, port=port)
 
         actions = self._get_action_list()
 
@@ -126,16 +127,10 @@ class MythTV:
             for (action, description) in actions["FrontendActionList"]["ActionList"].items()
         }
 
-    @retry(requests.RequestException, tries=30, delay=2)
+    @retry(RuntimeError, tries=30, delay=2)
     def _get_action_list(self):
         """Fetch the actions supported by this host."""
-        resp = requests.get(
-            f"http://{self._host}:{self._port}/Frontend/GetActionList",
-            headers={"Accept": "application/json"},
-            timeout=5,
-        )
-        resp.raise_for_status()
-        return resp.json()
+        return self.send("Frontend/GetActionList")
 
     def commands(self) -> dict[str, Command]:
         """
@@ -164,23 +159,22 @@ class MythTV:
                 command.key,
                 command.action
             )
-            resp = requests.post(
-                f"http://{self._host}:{self._port}/Frontend/SendKey?Key={command.key}",
-                headers={"Accept": "application/json"},
-                timeout=5,
-            )
+
+            jsondata = {"key": command.key}
+            try:
+                resp = self.send("Frontend/SendKey", jsondata=jsondata)
+            except (RuntimeError, RuntimeWarning) as e:
+                _LOG.error("SendKey failed: %s", e)
+                return False
         else:
             _LOG.debug("command %s mapped to action %s", command, command.action)
 
-            request = {"action": command.action}
-            resp = requests.post(
-                f"http://{self._host}:{self._port}/Frontend/SendAction",
-                headers={"Accept": "application/json"},
-                json=request,
-                timeout=5,
-            )
-        resp.raise_for_status()
-        resp = resp.json()
-        _LOG.debug(f"response: {json.dumps(resp)}")
+            jsondata = {"action": command.action}
+            try:
+                resp = self.send("Frontend/SendAction", jsondata=jsondata)
+            except (RuntimeError, RuntimeWarning) as e:
+                _LOG.error("SendAction failed: %s", e)
+                return False
 
+        _LOG.debug(f"response: {json.dumps(resp)}")
         return resp["bool"]

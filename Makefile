@@ -25,7 +25,7 @@ black:
 	$(VENV_PYTHON) -m black intg-mythtv --verbose --line-length 120
 
 venv:
-	python3 -m venv --prompt intg-mythtv $(VENV)
+	python3 -m venv --system-site-packages --prompt intg-mythtv $(VENV)
 	$(VENV)/bin//pip3 install -r requirements.txt
 
 venv-test: venv
