@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+##!/usr/bin/env python3
 """
 Remote Two integration driver for MythTV.
 
@@ -25,7 +25,7 @@ _LOOP = asyncio.new_event_loop()
 
 # Global variables
 api = ucapi.IntegrationAPI(_LOOP)
-_mythtv: mythtv.MythTV = None
+_MYTHTV: mythtv.MythTV = None
 
 
 @api.listens_to(ucapi.Events.CONNECT)
@@ -36,12 +36,13 @@ async def on_connect():
 
 @api.listens_to(ucapi.Events.SUBSCRIBE_ENTITIES)
 async def on_subscribe_entities(entity_ids) -> None:
+    """When the UCR2 subscribes, assume entities are on."""
     for entity_id in entity_ids:
         # Assumes that the MythTV device is always on
         api.configured_entities.update_attributes(entity_id, {remote.Attributes.STATE: remote.States.ON})
 
 
-async def remote_cmd_handler(entity: ucapi.Remote, cmd_id: str, params: dict[str, Any] | None) -> ucapi.StatusCodes:
+async def remote_cmd_handler(_entity: ucapi.Remote, cmd_id: str, params: dict[str, Any] | None) -> ucapi.StatusCodes:
     """
     Remote command handler.
 
@@ -68,7 +69,7 @@ async def remote_cmd_handler(entity: ucapi.Remote, cmd_id: str, params: dict[str
             # delay = params.get("delay", 0)
             # hold = params.get("hold", 0)
 
-            if not _mythtv.run_command(command):
+            if not _MYTHTV.run_command(command):
                 _LOG.error("command: %s failed", cmd_id)
                 return ucapi.StatusCodes.BAD_REQUEST
 
@@ -179,8 +180,8 @@ async def main():
     )
     api.available_entities.add(entity)
 
-    global _mythtv
-    _mythtv = mtv
+    global _MYTHTV
+    _MYTHTV = mtv
 
     await api.init("driver.json")
 

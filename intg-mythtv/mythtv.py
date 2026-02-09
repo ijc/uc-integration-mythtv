@@ -7,12 +7,12 @@ Using Frontend Services API: https://www.mythtv.org/wiki/Frontend_Service
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
-from MythTV.services_api.send import Send
 import logging
 from dataclasses import dataclass
 import json
 
-import requests
+from MythTV.services_api.send import Send
+
 from retry import retry
 
 _LOG = logging.getLogger(__name__)
@@ -113,7 +113,6 @@ class MythTV(Send):
         port: int = 6547,
     ):
         """Initialize the object."""
-
         super().__init__(host=host, port=port)
 
         actions = self._get_action_list()
@@ -176,5 +175,5 @@ class MythTV(Send):
                 _LOG.error("SendAction failed: %s", e)
                 return False
 
-        _LOG.debug(f"response: {json.dumps(resp)}")
+        _LOG.debug("response: %s", json.dumps(resp))
         return resp["bool"]
