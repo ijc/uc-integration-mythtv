@@ -118,9 +118,7 @@ class MythTV(Send):
 
         self._commands = {
             map_action_name_to_uc_simple_command(action): Command(
-                action,
-                ACTION_TO_SEND_KEY_MAP.get(action),
-                description
+                action, ACTION_TO_SEND_KEY_MAP.get(action), description
             )
             for (action, description) in actions["FrontendActionList"]["ActionList"].items()
         }
@@ -151,12 +149,7 @@ class MythTV(Send):
         command = self._commands[command]
 
         if command.key is not None:
-            _LOG.debug(
-                "command %s mapped to key %s (action:%s)",
-                command,
-                command.key,
-                command.action
-            )
+            _LOG.debug("command %s mapped to key %s (action:%s)", command, command.key, command.action)
 
             jsondata = {"key": command.key}
             try:
