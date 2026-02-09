@@ -7,12 +7,11 @@ Using Frontend Services API: https://www.mythtv.org/wiki/Frontend_Service
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
+import json
 import logging
 from dataclasses import dataclass
-import json
 
 from MythTV.services_api.send import Send
-
 from retry import retry
 
 _LOG = logging.getLogger(__name__)
