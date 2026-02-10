@@ -3,3 +3,6 @@ flake8-docstrings
 flake8
 black
 isort
+mypy
+
+types-retry

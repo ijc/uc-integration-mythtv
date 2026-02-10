@@ -5,7 +5,7 @@ VENV_PYTHON ?= $(VENV)/bin/python3
 
 all:
 
-lints: pylint check-flake8 check-isort check-black
+lints: pylint check-flake8 check-isort check-black check-mypy
 
 format: isort black
 
@@ -23,6 +23,9 @@ check-black:
 	$(VENV_PYTHON) -m black intg-mythtv --check --verbose --line-length 120
 black:
 	$(VENV_PYTHON) -m black intg-mythtv --verbose --line-length 120
+
+check-mypy:
+	$(VENV_PYTHON) -m mypy
 
 venv:
 	python3 -m venv --system-site-packages --prompt intg-mythtv $(VENV)

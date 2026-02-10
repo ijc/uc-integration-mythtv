@@ -25,7 +25,7 @@ _LOOP = asyncio.new_event_loop()
 
 # Global variables
 api = ucapi.IntegrationAPI(_LOOP)
-_MYTHTV: mythtv.MythTV = None
+_MYTHTV: mythtv.MythTV
 
 
 @api.listens_to(ucapi.Events.CONNECT)
@@ -57,6 +57,9 @@ async def remote_cmd_handler(_entity: ucapi.Remote, cmd_id: str, params: dict[st
 
     match cmd_id:
         case remote.Commands.SEND_CMD:
+            if params is None:
+                return ucapi.StatusCodes.BAD_REQUEST
+
             command = params.get("command")
             # It's up to the integration what to do with an unknown command.
             # If the supported commands are provided as simple_commands, then it's
