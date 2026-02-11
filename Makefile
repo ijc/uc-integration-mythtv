@@ -5,11 +5,11 @@ VENV_PYTHON ?= $(VENV)/bin/python3
 
 all:
 
-lints: pylint check-flake8 check-isort check-black check-mypy
+checks: check-pylint check-flake8 check-isort check-black check-mypy
 
 format: isort black
 
-check-pylint pylint:
+check-pylint:
 	$(VENV_PYTHON) -m pylint intg-mythtv
 check-flake8:
 	$(VENV_PYTHON) -m flake8 intg-mythtv --count --show-source --statistics
