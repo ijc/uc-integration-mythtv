@@ -25,7 +25,7 @@ _LOOP = asyncio.new_event_loop()
 
 # Global variables
 api = ucapi.IntegrationAPI(_LOOP)
-_MYTHTV: mythtv.MythTV
+_MYTHTV: dict[str, mythtv.MythTV] = {}
 
 
 @api.listens_to(ucapi.Events.CONNECT)
@@ -42,7 +42,7 @@ async def on_subscribe_entities(entity_ids) -> None:
         api.configured_entities.update_attributes(entity_id, {remote.Attributes.STATE: remote.States.ON})
 
 
-async def remote_cmd_handler(_entity: ucapi.Remote, cmd_id: str, params: dict[str, Any] | None) -> ucapi.StatusCodes:
+async def remote_cmd_handler(entity: ucapi.Remote, cmd_id: str, params: dict[str, Any] | None) -> ucapi.StatusCodes:
     """
     Remote command handler.
 
@@ -54,6 +54,11 @@ async def remote_cmd_handler(_entity: ucapi.Remote, cmd_id: str, params: dict[st
     :return: status of the command
     """
     _LOG.info("command: %s %s", cmd_id, params if params else "")
+
+    mtv = _MYTHTV.get(entity.id)
+
+    if mtv is None:
+        return ucapi.StatusCodes.BAD_REQUEST
 
     match cmd_id:
         case remote.Commands.SEND_CMD:
@@ -72,7 +77,7 @@ async def remote_cmd_handler(_entity: ucapi.Remote, cmd_id: str, params: dict[st
             # delay = params.get("delay", 0)
             # hold = params.get("hold", 0)
 
-            if not _MYTHTV.run_command(command):
+            if not mtv.run_command(command):
                 _LOG.error("command: %s failed", cmd_id)
                 return ucapi.StatusCodes.BAD_REQUEST
 
@@ -183,8 +188,7 @@ async def main():
     )
     api.available_entities.add(entity)
 
-    global _MYTHTV
-    _MYTHTV = mtv
+    _MYTHTV[device.id] = mtv
 
     await api.init("driver.json")
 
