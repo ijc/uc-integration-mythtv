@@ -1,6 +1,6 @@
 [Unit]
 Description=MythTV Integration for Unfolded Circle Remote 2
-Requires=mythtv-frontend.service
+After=mythtv-frontend.service
 
 [Service]
 Type=simple
