@@ -9,7 +9,10 @@ Using Frontend Services API: https://www.mythtv.org/wiki/Frontend_Service
 
 import json
 import logging
+import shlex
+import subprocess
 from dataclasses import dataclass
+from subprocess import DEVNULL
 
 from MythTV.services_api.send import Send
 from retry import retry
@@ -30,6 +33,8 @@ class Command:
     desc: str
     """Description"""
 
+
+FRONTEND_RESTART_ACTION = "RESTART_FRONTEND"
 
 # Map from MythTV Action to valid UC Remote simple command name.
 COMMAND_MAP = {
@@ -110,6 +115,7 @@ class MythTV(Send):
         self,
         host: str,
         port: int = 6547,
+        frontend_restart_command: str | None = None,
     ):
         """Initialize the object."""
         super().__init__(host=host, port=port)
@@ -122,6 +128,10 @@ class MythTV(Send):
             )
             for (action, description) in actions["FrontendActionList"]["ActionList"].items()
         }
+
+        if frontend_restart_command is not None:
+            _LOG.info("Frontend Restart Command: %s", frontend_restart_command)
+            self._commands[FRONTEND_RESTART_ACTION] = Command(frontend_restart_command, None, "Restart mythfrontend")
 
     @retry(RuntimeError, tries=30, delay=2)
     def _get_action_list(self):
@@ -146,21 +156,24 @@ class MythTV(Send):
             _LOG.error("command: %s not found", command)
             return False
 
-        command = self._commands[command]
+        action = self._commands[command]
 
-        if command.key is not None:
-            _LOG.debug("command %s mapped to key %s (action:%s)", command, command.key, command.action)
+        if command == FRONTEND_RESTART_ACTION:
+            _LOG.debug("commmand %s mapped to restart frontend: %s", action, action.action)
+            resp = run_system_command(action.action)
+        elif action.key is not None:
+            _LOG.debug("command %s mapped to key %s (action:%s)", action, action.key, action.action)
 
-            jsondata = {"key": command.key}
+            jsondata = {"key": action.key}
             try:
                 resp = self.send("Frontend/SendKey", jsondata=jsondata)
             except (RuntimeError, RuntimeWarning) as e:
                 _LOG.error("SendKey failed: %s", e)
                 return False
         else:
-            _LOG.debug("command %s mapped to action %s", command, command.action)
+            _LOG.debug("command %s mapped to action %s", action, action.action)
 
-            jsondata = {"action": command.action}
+            jsondata = {"action": action.action}
             try:
                 resp = self.send("Frontend/SendAction", jsondata=jsondata)
             except (RuntimeError, RuntimeWarning) as e:
@@ -169,3 +182,16 @@ class MythTV(Send):
 
         _LOG.debug("response: %s", json.dumps(resp))
         return resp["bool"]
+
+
+def run_system_command(command: str):
+    """Run the given command."""
+    args = shlex.split(command)
+    r = subprocess.run(
+        args,
+        stdin=DEVNULL,
+        shell=False,
+        check=False,
+    )
+
+    return {"bool": r.returncode == 0}

@@ -166,7 +166,7 @@ async def main():
     device = config.MythTVDevice(id=name, name=name, address=host, port=port)
     logging.info("Setup: %s", device)
 
-    mtv = MythTV(device.address, int(device.port))
+    mtv = MythTV(device.address, int(device.port), os.getenv("INTG_MYTHTV_FRONTEND_RESTART_COMMAND", None))
     commands = mtv.commands()
 
     cmds = list(commands.keys())
