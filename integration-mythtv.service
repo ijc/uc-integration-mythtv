@@ -1,5 +1,6 @@
 [Unit]
 Description=MythTV Integration for Unfolded Circle Remote 2
+Wants=mythtv-frontend.service
 After=mythtv-frontend.service
 
 [Service]
