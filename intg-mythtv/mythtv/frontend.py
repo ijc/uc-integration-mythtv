@@ -173,7 +173,7 @@ def map_mythtv_action_name_to_uc_command(action: str) -> Tuple[media_player.Comm
     return command, MythTVCommandKind.SIMPLE
 
 
-class MythTV(Send):
+class MythTVFrontend(Send):
     """Control a MythTV frontend."""
 
     def __init__(

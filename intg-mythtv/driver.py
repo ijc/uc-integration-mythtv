@@ -14,9 +14,8 @@ import signal
 from typing import Any, Tuple
 
 import config
-import mythtv
 import ucapi
-from mythtv import MythTV, MythTVCommand
+from mythtv import MythTVFrontend, MythTVCommand
 from ucapi import MediaPlayer, media_player, remote
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
@@ -24,7 +23,7 @@ _LOOP = asyncio.new_event_loop()
 
 # Global variables
 api = ucapi.IntegrationAPI(_LOOP)
-_MYTHTV: dict[str, mythtv.MythTV] = {}
+_MYTHTV: dict[str, MythTVFrontend] = {}
 
 
 @api.listens_to(ucapi.Events.CONNECT)
@@ -218,7 +217,7 @@ async def main():
     device = config.MythTVDevice(id=name, name=name, address=host, port=port)
     logging.info("Setup: %s", device)
 
-    mtv = MythTV(device.address, int(device.port), os.getenv("INTG_MYTHTV_FRONTEND_RESTART_COMMAND", None))
+    mtv = MythTVFrontend(device.address, int(device.port), os.getenv("INTG_MYTHTV_FRONTEND_RESTART_COMMAND", None))
     commands = mtv.commands()
     logging.info("MythTV exposes %d commands", len(commands))
 
