@@ -15,7 +15,7 @@ from typing import Any, Tuple
 
 import config
 import ucapi
-from mythtv import MythTVFrontend, MythTVCommand
+from mythtv import MythTVBackend, MythTVCommand, MythTVFrontend
 from ucapi import MediaPlayer, media_player, remote
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
@@ -212,12 +212,13 @@ async def main():
 
     host = os.getenv("INTG_MYTHTV_HOST", "localhost")
     name = os.getenv("INTG_MYTHTV_NAME", host)
-    port = os.getenv("INTG_MYTHTV_PORT", "6547")
+    port = os.getenv("INTG_MYTHTV_PORT", "6544")
 
     device = config.MythTVDevice(id=name, name=name, address=host, port=port)
     logging.info("Setup: %s", device)
 
-    mtv = MythTVFrontend(device.address, int(device.port), os.getenv("INTG_MYTHTV_FRONTEND_RESTART_COMMAND", None))
+    be = MythTVBackend(device.address, int(device.port))
+    mtv = be.frontend(os.getenv("INTG_MYTHTV_FRONTEND_RESTART_COMMAND", None))
     commands = mtv.commands()
     logging.info("MythTV exposes %d commands", len(commands))
 

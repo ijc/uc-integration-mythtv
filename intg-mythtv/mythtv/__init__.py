@@ -5,9 +5,11 @@ MythTV communication for Remote Two integration.
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
-from mythtv.frontend import MythTVFrontend, MythTVCommand
+from mythtv.backend import MythTVBackend
+from mythtv.frontend import MythTVCommand, MythTVFrontend
 
 __all__ = [
+    "MythTVBackend",
     "MythTVFrontend",
     "MythTVCommand",
 ]

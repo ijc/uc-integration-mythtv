@@ -31,7 +31,7 @@ The integration is configured via environment variables:
 | -------------------------------------- | --------------------------- |
 | `INTG_MYTHTV_HOST`                     | `localhost`                 |
 | `INTG_MYTHTV_NAME`                     | Inherits `INTG_MYTHTV_HOST` |
-| `INTG_MYTHTV_PORT`                     | `6547`                      |
+| `INTG_MYTHTV_PORT`                     | `6544`                      |
 | `INTG_MYTHTV_FRONTEND_RESTART_COMMAND` | Command to reset frontend   |
 
 See also the [environment variables][] defined in the [Python
