@@ -7,9 +7,13 @@ Using Backend APIs
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
+import logging
+
 from MythTV.services_api.send import Send
 
 from .frontend import MythTVFrontend
+
+_LOG = logging.getLogger(__name__)
 
 
 class MythTVBackend(Send):
@@ -22,6 +26,15 @@ class MythTVBackend(Send):
     ):
         """Initialize the object."""
         super().__init__(host=host, port=port)
+
+        frontends = self.send("Status/GetBackendStatus")["BackendStatus"]["Frontends"]
+
+        self._frontends = {}
+        for f in frontends:
+            _LOG.debug("Frontend: %s", f)
+            name = f["Name"]
+            frontend = MythTVFrontend(host=f["IP"], port=f["Port"])
+            self._frontends[name] = frontend
 
     def frontend(self, frontend_restart_command: str | None = None) -> MythTVFrontend:
         """Temp."""
