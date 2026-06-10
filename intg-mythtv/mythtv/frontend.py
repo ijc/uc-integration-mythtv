@@ -22,8 +22,6 @@ from mythtv_legacy_remote import legacy_remote_map_action_name_to_uc_simple_comm
 from retry import retry
 from ucapi import media_player
 
-_LOG = logging.getLogger(__name__)
-
 
 class MythTVCommandKind(Enum):
     """The kind of a command."""
@@ -150,7 +148,9 @@ MYTHTV_SEND_ACTION_TO_SEND_KEY_MAP = {
 """Maps SendAction commands to SendKey keys"""
 
 
-def map_mythtv_action_name_to_uc_command(action: str) -> Tuple[media_player.Commands | str, MythTVCommandKind]:
+def map_mythtv_action_name_to_uc_command(
+    log: logging.Logger, action: str
+) -> Tuple[media_player.Commands | str, MythTVCommandKind]:
     """
     Map from MythTV Action to valid UC Media Player command name.
 
@@ -167,7 +167,7 @@ def map_mythtv_action_name_to_uc_command(action: str) -> Tuple[media_player.Comm
     else:
         command = action.upper().replace(" ", "_").replace("/", "_")
         if len(command) > 20:
-            _LOG.warning("Action %s truncated", action)
+            log.warning("Action %s truncated", action)
             command = command[:20]
 
     return command, MythTVCommandKind.SIMPLE
@@ -178,17 +178,19 @@ class MythTVFrontend(Send):
 
     def __init__(
         self,
+        name: str,
         host: str,
         port: int = 6547,
         frontend_restart_command: str | None = None,
     ):
         """Initialize the object."""
         super().__init__(host=host, port=port)
+        self._log = logging.getLogger(f"{__name__}.{name}")
 
         actions = self._get_action_list()
 
         def make_mythtv_command(action: str, description: str) -> Tuple[media_player.Commands | str, MythTVCommand]:
-            uc_command, kind = map_mythtv_action_name_to_uc_command(action)
+            uc_command, kind = map_mythtv_action_name_to_uc_command(self._log, action)
             return (
                 uc_command,
                 MythTVCommand(action, MYTHTV_SEND_ACTION_TO_SEND_KEY_MAP.get(action), description, kind),
@@ -214,7 +216,7 @@ class MythTVFrontend(Send):
         #     print(f"Legacy: {k:20} -> {v}")
 
         if frontend_restart_command is not None:
-            _LOG.info("Frontend Restart Command: %s", frontend_restart_command)
+            self._log.info("Restart Command: %s", frontend_restart_command)
             self._commands[FRONTEND_RESTART_SYSTEM_COMMAND] = MythTVCommand(
                 frontend_restart_command, None, "Restart mythfrontend", MythTVCommandKind.SYSTEM_COMMAND
             )
@@ -241,39 +243,41 @@ class MythTVFrontend(Send):
         command = self._commands.get(cmd_id)
         if not command:
             if (mapped_legacy_remote_command := self._legacy_remote_command_map.get(cmd_id)) is not None:
-                _LOG.warning("Mapped legacy remote command %s to UC command %s", cmd_id, mapped_legacy_remote_command)
+                self._log.warning(
+                    "Mapped legacy remote command %s to UC command %s", cmd_id, mapped_legacy_remote_command
+                )
                 cmd_id = mapped_legacy_remote_command
                 command = self._commands.get(cmd_id)
 
         if not command:
-            _LOG.error("command: %s not found", cmd_id)
+            self._log.error("command: %s not found", cmd_id)
             return ucapi.StatusCodes.NOT_FOUND
 
-        _LOG.info("UC commmand %s mapped to %s", cmd_id, command)
+        self._log.info("UC commmand %s mapped to %s", cmd_id, command)
 
         if command.kind == MythTVCommandKind.SYSTEM_COMMAND:
-            _LOG.debug("system command: %s", command.action)
+            self._log.debug("system command: %s", command.action)
             resp = run_system_command(command.action)
         elif command.key is not None:
-            _LOG.debug("SendKey %s (action:%s)", command.key, command.action)
+            self._log.debug("SendKey %s (action:%s)", command.key, command.action)
 
             jsondata = {"key": command.key}
             try:
                 resp = self.send("Frontend/SendKey", jsondata=jsondata)
             except (RuntimeError, RuntimeWarning) as e:
-                _LOG.error("SendKey failed: %s", e)
+                self._log.error("SendKey failed: %s", e)
                 return ucapi.StatusCodes.SERVER_ERROR
         else:
-            _LOG.debug("SendAction %s", command.action)
+            self._log.debug("SendAction %s", command.action)
 
             jsondata = {"action": command.action}
             try:
                 resp = self.send("Frontend/SendAction", jsondata=jsondata)
             except (RuntimeError, RuntimeWarning) as e:
-                _LOG.error("SendAction failed: %s", e)
+                self._log.error("SendAction failed: %s", e)
                 return ucapi.StatusCodes.SERVER_ERROR
 
-        _LOG.debug("response: %s", json.dumps(resp))
+        self._log.debug("response: %s", json.dumps(resp))
         if not resp["bool"]:
             return ucapi.StatusCodes.SERVER_ERROR
 

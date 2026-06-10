@@ -10,10 +10,10 @@ Remote Two integration driver for MythTV.
 import asyncio
 import logging
 import os
+import re
 import signal
 from typing import Any, Tuple
 
-import config
 import ucapi
 from mythtv import MythTVBackend, MythTVCommand, MythTVFrontend
 from ucapi import MediaPlayer, media_player, remote
@@ -36,6 +36,7 @@ async def on_connect():
 async def on_subscribe_entities(entity_ids) -> None:
     """When the UCR2 subscribes, assume entities are on."""
     for entity_id in entity_ids:
+        _LOG.debug("Frontend[%s]: subscribe", entity_id)
         api.configured_entities.update_attributes(
             entity_id,
             {
@@ -60,7 +61,7 @@ async def media_player_cmd_handler(
     :param params: optional command parameters
     :return: status of the command
     """
-    _LOG.debug("command: %s %s", cmd_id, params if params else "")
+    _LOG.debug("Frontend[%s]: command:  %s %s", entity.id, cmd_id, params if params else "")
 
     mtv = _MYTHTV.get(entity.id)
 
@@ -68,9 +69,9 @@ async def media_player_cmd_handler(
         return ucapi.StatusCodes.BAD_REQUEST
 
     if cmd_id == remote.Commands.SEND_CMD:
-        _LOG.warning("Handling legacy remote SEND_CMD")
+        _LOG.warning("Frontend[%s]: Handling legacy remote SEND_CMD", entity.id)
         if params is None or "command" not in params:
-            _LOG.error("Malformed arguments to SEND_CMD")
+            _LOG.error("Frontend[%s]: Malformed arguments to SEND_CMD", entity.id)
             return ucapi.StatusCodes.BAD_REQUEST
         cmd_id = params["command"]
 
@@ -174,6 +175,7 @@ FEATURE_REQUIRED_COMMANDS: dict[media_player.Features, set[media_player.Commands
 
 
 def features_and_commands(
+    entity: str,
     commands: dict[media_player.Commands | str, MythTVCommand],
 ) -> Tuple[list[media_player.Features], list[str]]:
     """Map MythTVCommands to UC2 media player features and simple commands."""
@@ -183,18 +185,31 @@ def features_and_commands(
 
     for feature, required_commands in FEATURE_REQUIRED_COMMANDS.items():
         if all(r in available_commands for r in required_commands):
-            logging.info("All %d commands required for feature %s present", len(required_commands), feature.name)
+            _LOG.info(
+                "Frontend[%s]: All %d commands required for feature %s present",
+                entity,
+                len(required_commands),
+                feature.name,
+            )
             features.append(feature)
             for c in required_commands:
                 del simple_commands[c]
         else:
-            logging.info(
-                "Missing commands needed for feature %s: %s",
+            _LOG.info(
+                "Frontend[%s]: Missing commands needed for feature %s: %s",
+                entity,
                 feature.name,
                 [e.name for e in required_commands - available_commands],
             )
 
     return features, list(simple_commands.keys())
+
+
+def restart_commands_from_env() -> dict[str, str]:
+    """Extract frontend restart commands from environment."""
+    key_re = re.compile(r"INTG_MYTHTV_FRONTEND_(.*)_RESTART_COMMAND")
+    re_matches = {m.group(1).lower(): v for k, v in os.environ.items() for m in (key_re.match(k),) if m}
+    return re_matches
 
 
 async def main():
@@ -207,47 +222,42 @@ async def main():
     level = os.getenv("UC_LOG_LEVEL", "DEBUG").upper()
     logging.getLogger("mythtv").setLevel(level)
     logging.getLogger("driver").setLevel(level)
-    logging.getLogger("config").setLevel(level)
     logging.getLogger("root").setLevel(level)
 
     host = os.getenv("INTG_MYTHTV_HOST", "localhost")
-    name = os.getenv("INTG_MYTHTV_NAME", host)
     port = os.getenv("INTG_MYTHTV_PORT", "6544")
 
-    device = config.MythTVDevice(id=name, name=name, address=host, port=port)
-    logging.info("Setup: %s", device)
+    be = MythTVBackend(host, int(port), restart_commands_from_env())
+    for name, mtv in be.frontends():
+        commands = mtv.commands()
+        _LOG.info("Frontend[%s] exposes %d commands", name, len(commands))
 
-    be = MythTVBackend(device.address, int(device.port))
-    mtv = be.frontend(os.getenv("INTG_MYTHTV_FRONTEND_RESTART_COMMAND", None))
-    commands = mtv.commands()
-    logging.info("MythTV exposes %d commands", len(commands))
+        # for c in commands.items():
+        #     print(f"C: {c}")
 
-    # for c in commands.items():
-    #     print(f"C: {c}")
+        features, simple_commands = features_and_commands(name, commands)
 
-    features, simple_commands = features_and_commands(commands)
+        _LOG.info("Frontend[%s]: Enabling features: %s", name, [f.name for f in features])
+        _LOG.info("Frontend[%s]: Enabling %d simple commands", name, len(simple_commands))
+        # for f in features:
+        #     print(f"F: {f}")
+        # for sc in simple_commands:
+        #     print(f"SC: {sc}")
 
-    logging.info("Enabling features: %s", [f.name for f in features])
-    logging.info("Enabling %d simple commands", len(simple_commands))
-    # for f in features:
-    #     print(f"F: {f}")
-    # for sc in simple_commands:
-    #     print(f"SC: {sc}")
+        _MYTHTV[name] = mtv
 
-    _MYTHTV[device.id] = mtv
+        entity = MediaPlayer(
+            identifier=name,
+            name=name,
+            features=features,
+            attributes={},
+            options={
+                media_player.Options.SIMPLE_COMMANDS: simple_commands,
+            },
+            cmd_handler=media_player_cmd_handler,
+        )
 
-    entity = MediaPlayer(
-        identifier=device.id,
-        name=device.name,
-        features=features,
-        attributes={},
-        options={
-            media_player.Options.SIMPLE_COMMANDS: simple_commands,
-        },
-        cmd_handler=media_player_cmd_handler,
-    )
-
-    api.available_entities.add(entity)
+        api.available_entities.add(entity)
 
     await api.init("driver.json")
 
