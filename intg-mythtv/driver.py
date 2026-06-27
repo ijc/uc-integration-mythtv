@@ -185,7 +185,7 @@ def features_and_commands(
 
     for feature, required_commands in FEATURE_REQUIRED_COMMANDS.items():
         if all(r in available_commands for r in required_commands):
-            _LOG.info(
+            _LOG.debug(
                 "Frontend[%s]: All %d commands required for feature %s present",
                 entity,
                 len(required_commands),
@@ -195,7 +195,7 @@ def features_and_commands(
             for c in required_commands:
                 del simple_commands[c]
         else:
-            _LOG.info(
+            _LOG.debug(
                 "Frontend[%s]: Missing commands needed for feature %s: %s",
                 entity,
                 feature.name,
@@ -221,8 +221,10 @@ async def main():
     )
     level = os.getenv("UC_LOG_LEVEL", "DEBUG").upper()
     logging.getLogger("mythtv").setLevel(level)
+    logging.getLogger("mythtv_legacy_remote").setLevel(level)
     logging.getLogger("driver").setLevel(level)
-    logging.getLogger("root").setLevel(level)
+    logging.getLogger("ucapi").setLevel(level)
+    logging.getLogger("ucapi.api").setLevel(level)
 
     host = os.getenv("INTG_MYTHTV_HOST", "localhost")
     port = os.getenv("INTG_MYTHTV_PORT", "6544")
@@ -230,7 +232,7 @@ async def main():
     be = MythTVBackend(host, int(port), restart_commands_from_env())
     for name, mtv in be.frontends():
         commands = mtv.commands()
-        _LOG.info("Frontend[%s] exposes %d commands", name, len(commands))
+        _LOG.debug("Frontend[%s] exposes %d commands", name, len(commands))
 
         # for c in commands.items():
         #     print(f"C: {c}")
