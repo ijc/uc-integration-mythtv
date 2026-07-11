@@ -98,3 +98,18 @@ Adjust to use your actual remote URL, PIN and the hostname of your
 MythTV frontend.
 
 [core simulator]: https://github.com/unfoldedcircle/core-simulator/
+
+## Development
+
+```console
+$ make venv-test
+$ make format
+$ make checks
+```
+
+### Type Stubs
+
+```console
+$ stubgen stubgen ./venv/lib/python3.13/site-packages/MythTV/
+... add minimal needed bits to stubs/MythTV
+```

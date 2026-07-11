@@ -15,7 +15,13 @@ import signal
 from typing import Any, Tuple
 
 import ucapi
-from mythtv import MythTVBackend, MythTVCommand, MythTVFrontend
+from mythtv import (
+    MythTVBackend,
+    MythTVCommand,
+    MythTVEvent,
+    MythTVEventBus,
+    MythTVFrontend,
+)
 from ucapi import MediaPlayer, media_player, remote
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
@@ -23,6 +29,7 @@ _LOOP = asyncio.new_event_loop()
 
 # Global variables
 api = ucapi.IntegrationAPI(_LOOP)
+mythevents = MythTVEventBus(_LOOP)
 _MYTHTV: dict[str, MythTVFrontend] = {}
 
 
@@ -50,7 +57,7 @@ async def on_subscribe_entities(entity_ids) -> None:
 
 
 async def media_player_cmd_handler(
-    entity: ucapi.MediaPlayer, cmd_id: str, params: dict[str, Any] | None
+    entity: ucapi.MediaPlayer, cmd_id: str, params: dict[str, Any] | None, _ws: Any | None = None
 ) -> ucapi.StatusCodes:
     """Command handler.
 
@@ -76,6 +83,127 @@ async def media_player_cmd_handler(
         cmd_id = params["command"]
 
     return mtv.run_command(cmd_id)
+
+
+@mythevents.on(MythTVEvent.FRONTEND_DISCOVERED)
+async def on_myth_frontend_discovered(name: str, frontend: MythTVFrontend):
+    """When a new Frontend is discovered."""
+    if name in _MYTHTV:
+        _LOG.debug("Rediscovered existing frontend: %s", name)
+        return
+
+    commands = frontend.commands()
+    _LOG.debug("Frontend[%s] exposes %d commands", name, len(commands))
+
+    features, simple_commands = features_and_commands(name, commands)
+
+    _LOG.info("Frontend[%s]: Enabling features: %s", name, [f.name for f in features])
+    _LOG.info("Frontend[%s]: Enabling %d simple commands", name, len(simple_commands))
+
+    _MYTHTV[name] = frontend
+
+    entity = MediaPlayer(
+        identifier=name,
+        name=name,
+        features=features,
+        attributes={},
+        options={
+            media_player.Options.SIMPLE_COMMANDS: simple_commands,
+        },
+        cmd_handler=media_player_cmd_handler,
+    )
+
+    api.available_entities.add(entity)
+
+
+@mythevents.on(MythTVEvent.CLIENT_CONNECTED)
+async def on_myth_client_connected(hostname: str, sender: str):
+    """Handle MythTVEvent.CLIENT_CONNECTED."""
+    known = "known" if hostname in _MYTHTV else "unknown"
+    _LOG.info("Myth client connected: hostname=%s: sender=%s (%s)", hostname, sender, known)
+
+
+@mythevents.on(MythTVEvent.CLIENT_DISCONNECTED)
+async def on_myth_client_disconnected(hostname: str, sender: str):
+    """Handle MythTVEvent.CLIENT_DISCONNECTED."""
+    known = "known" if hostname in _MYTHTV else "unknown"
+    _LOG.info("Myth client disconnected: hostname=%s: sender=%s (%s)", hostname, sender, known)
+
+
+def on_myth_play_status_change(
+    event: str,
+    hostname: str,
+    chanid: str,
+    starttime: str,
+    program: dict[str, Any] | None,
+):
+    """Handle MythTVEvent.PLAY_*."""
+    title = program["Title"] if program else "Unknown"
+    _LOG.info(
+        "Myth play %s: hostname=%s: chanid=%s, starttime=%s title=%s",
+        event,
+        hostname,
+        chanid,
+        starttime,
+        title,
+    )
+
+
+@mythevents.on(MythTVEvent.PLAY_STARTED)
+async def on_myth_play_started(
+    hostname: str,
+    chanid: str,
+    starttime: str,
+    program: dict[str, Any] | None,
+    **_kwargs,
+):
+    """Handle MythTVEvent.PLAY_STARTED."""
+    on_myth_play_status_change("started", hostname, chanid, starttime, program)
+
+
+@mythevents.on(MythTVEvent.PLAY_STOPPED)
+async def on_myth_play_stopped(
+    hostname: str,
+    chanid: str,
+    starttime: str,
+    program: dict[str, Any] | None,
+    **_kwargs,
+):
+    """Handle MythTVEvent.PLAY_STOPPED."""
+    on_myth_play_status_change("stopped", hostname, chanid, starttime, program)
+
+
+@mythevents.on(MythTVEvent.PLAY_PAUSED)
+async def on_myth_play_paused(
+    hostname: str,
+    chanid: str,
+    starttime: str,
+    program: dict[str, Any] | None,
+    **_kwargs,
+):
+    """Handle MythTVEvent.PLAY_PAUSED."""
+    on_myth_play_status_change("paused", hostname, chanid, starttime, program)
+
+
+@mythevents.on(MythTVEvent.PLAY_UNPAUSED)
+async def on_myth_play_unpaused(
+    hostname: str,
+    chanid: str,
+    starttime: str,
+    program: dict[str, Any] | None,
+    **_kwargs,
+):
+    """Handle MythTVEvent.PLAY_UNPAUSED."""
+    on_myth_play_status_change("unpaused", hostname, chanid, starttime, program)
+
+
+@mythevents.on(MythTVEvent.UNKNOWN_SYSTEM_EVENT)
+async def on_myth_unknown_system_event(event_name: str, **kwargs):
+    """Handle MythTVEvent.UNKNOWN_SYSTEM_EVENT."""
+    if "program" in kwargs:  # too verbose
+        # del kwargs["program"]
+        kwargs["program"] = kwargs["program"]["Title"]
+    _LOG.info("UNKNOWN SYSTEM EVENT: %s: %s", event_name, kwargs)
 
 
 # https://github.com/unfoldedcircle/core-api/blob/main/doc/entities/entity_media_player.md#features
@@ -229,37 +357,7 @@ async def main():
     host = os.getenv("INTG_MYTHTV_HOST", "localhost")
     port = os.getenv("INTG_MYTHTV_PORT", "6544")
 
-    be = MythTVBackend(host, int(port), restart_commands_from_env())
-    for name, mtv in be.frontends():
-        commands = mtv.commands()
-        _LOG.debug("Frontend[%s] exposes %d commands", name, len(commands))
-
-        # for c in commands.items():
-        #     print(f"C: {c}")
-
-        features, simple_commands = features_and_commands(name, commands)
-
-        _LOG.info("Frontend[%s]: Enabling features: %s", name, [f.name for f in features])
-        _LOG.info("Frontend[%s]: Enabling %d simple commands", name, len(simple_commands))
-        # for f in features:
-        #     print(f"F: {f}")
-        # for sc in simple_commands:
-        #     print(f"SC: {sc}")
-
-        _MYTHTV[name] = mtv
-
-        entity = MediaPlayer(
-            identifier=name,
-            name=name,
-            features=features,
-            attributes={},
-            options={
-                media_player.Options.SIMPLE_COMMANDS: simple_commands,
-            },
-            cmd_handler=media_player_cmd_handler,
-        )
-
-        api.available_entities.add(entity)
+    MythTVBackend(host, int(port), restart_commands_from_env(), events=mythevents)
 
     await api.init("driver.json")
 
