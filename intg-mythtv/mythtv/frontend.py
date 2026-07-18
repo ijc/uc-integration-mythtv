@@ -61,7 +61,7 @@ MYTHTV_ACTION_TO_UC_MEDIA_PLAYER_COMMAND_MAP: dict[str, media_player.Commands] =
     #: media_player.Commands.ON,
     #: media_player.Commands.OFF,
     #: media_player.Commands.TOGGLE,
-    #: media_player.Commands.PLAY_PAUSE,
+    "PAUSE": media_player.Commands.PLAY_PAUSE,
     "STOP": media_player.Commands.STOP,
     "SEEKRWND": media_player.Commands.PREVIOUS,
     "SEEKFFWD": media_player.Commands.NEXT,
