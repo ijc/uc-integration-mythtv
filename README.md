@@ -110,6 +110,6 @@ $ make checks
 ### Type Stubs
 
 ```console
-$ stubgen stubgen ./venv/lib/python3.13/site-packages/MythTV/
+$ stubgen ./venv/lib/python3.13/site-packages/MythTV/
 ... add minimal needed bits to stubs/MythTV
 ```

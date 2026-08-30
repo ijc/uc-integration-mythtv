@@ -1,0 +1,26 @@
+class ERRCODES:
+    GENERIC: int
+    SYSTEM: int
+    SOCKET: int
+    DB_RAW: int
+    DB_CONNECTION: int
+    DB_CREDENTIALS: int
+    DB_SETTING: int
+    DB_SCHEMAMISMATCH: int
+    DB_SCHEMAUPDATE: int
+    DB_RESTRICT: int
+    PROTO_CONNECTION: int
+    PROTO_ANNOUNCE: int
+    PROTO_MISMATCH: int
+    PROTO_PROGRAMINFO: int
+    FE_CONNECTION: int
+    FE_ANNOUNCE: int
+    FILE_ERROR: int
+    FILE_FAILED_READ: int
+    FILE_FAILED_WRITE: int
+    FILE_FAILED_SEEK: int
+    TZ_ERROR: int
+    TZ_INVALID_FILE: int
+    TZ_INVALID_TRANSITION: int
+    TZ_CONVERSION_ERROR: int
+    TZ_VERSION_ERROR: int

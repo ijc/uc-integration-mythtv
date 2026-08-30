@@ -8,8 +8,6 @@ Event Bus
 """
 
 import asyncio
-
-# import functools
 from asyncio import AbstractEventLoop
 from enum import StrEnum
 from typing import Any, Callable

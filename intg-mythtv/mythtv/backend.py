@@ -8,91 +8,112 @@ Using Backend APIs
 """
 
 import logging
-import re
+from asyncio import AbstractEventLoop
 from collections.abc import Callable
+from itertools import chain, repeat
 from typing import Any, ItemsView
 
-from MythTV import BECache
-from MythTV.connections import BEEventConnection
+from MythTV.connections import BEConnection
+from MythTV.exceptions import MythBEError, MythError
 from MythTV.services_api.send import Send
 
 from .events import Event, EventBus
 from .frontend import MythTVFrontend
 
 
-class SystemEventMonitor(BECache):
+class SystemEventMonitor(BEConnection):
     """Bridge from Myth BEEventMontor to callback."""
 
     _cb: Callable[[str, dict[str, str | None]], None]
+    _loop: AbstractEventLoop
 
-    def __init__(self, backend: str, cb: Callable[[str, dict[str, str | None]], None]):
+    def __init__(
+        self, backend: str, port: int, loop: AbstractEventLoop, cb: Callable[[str, dict[str, str | None]], None]
+    ):
         """Create system event monitor for backend."""
         self._cb = cb
+        self._loop = loop
         self._log = logging.getLogger(f"{__name__}.{backend}.event_monitor")
-        super().__init__(backend=backend, blockshutdown=False, events=True, db=None)
 
-    def _listhandlers(self):
-        return [self.event]
+        super().__init__(backend=backend, port=port, blockshutdown=False)
 
-    def _neweventconn(self):
-        beconn = BEEventConnection(
-            backend=self.host,
-            port=self.port,
-            localname=self.db.gethostname(),
-            level=3,  # system events only
-        )
+        self._loop.add_reader(self.socket, self._event_handler)
 
-        # Until https://github.com/MythTV/mythtv/pull/1409 is merged/released
-        old_reconnect = beconn.reconnect
+    def announce(self):
+        """Announce to backend as a monitor for system events."""
+        # set event level, 3=system only, 2=generic only, 1=both, 0=none
+        res = self.backendCommand(f"ANN Monitor {self.localname} 3")
+        print(f"ANNOUNCE: Result={res}")
+        if res != "OK":
+            raise MythBEError(MythError.PROTO_ANNOUNCE, self.host, self.port, res)
 
-        # cd23715783f3 ("Add IPv6 support to the Python Bindings.")
-        # Previous protoype:
-        #   def reconnect(self, force=False, hard=False):
-        # New prototype:
-        #   def reconnect(self, hard=False):
-        # Remaning incorrect caller is
-        #   self.reconnect(True, True)
-        def reconnect(xself, a=False, b=None):
-            self._log.debug("Monkey patched BEEventConnect.reconnect called self=%s a=%s b=%s", xself, a, b)
-            if b is not None:
-                assert a == b
-            return old_reconnect(a)
+    def reconnect_with_retries(self, hard=False, timeouts=None):
+        """Reconnect with retries, sleeping asynchronously."""
+        self._log.info("SystemEventMonitor.reconnect_with_retries [%s]:%d hard=%s", self.host, self.port, hard)
+        if not timeouts:
+            # ~33s in total
+            # timeouts = enumerate([1, 1, 2, 3, 5, 8, 13], 1)
+            # Forever
+            timeouts = enumerate(chain([1, 1, 2, 3], repeat(5)), 1)
 
-        # pylint: disable=no-value-for-parameter
-        beconn.reconnect = reconnect.__get__(self, BEEventConnection)
-
-        return beconn
+        try:
+            nr, next_delay = next(timeouts)
+        except StopIteration as exc:
+            self._log.error("Too many retries reconnecting to [%s]:%d", self.host, self.port)
+            raise MythBEError(MythError.PROTO_CONNECTION, self.host, self.port) from exc
+        try:
+            self._log.info("Reconnect attempt %d", nr)
+            self.reconnect(hard)
+            self._log.info("Reconnected successfully")
+            self._loop.add_reader(self.socket, self._event_handler)
+        except (MythError, OSError) as e:
+            self._log.info("Error connecting [%s]:%d: %s", self.host, self.port, e)
+            self._log.info("Retrying in %ds", next_delay)
+            self._loop.call_later(next_delay, self.reconnect_with_retries, True, timeouts)
 
     # pylint: disable=too-many-return-statements
-    def event(self, event=None):
-        """Handle an event."""
-        if event is None:
-            return re.compile("BACKEND_MESSAGE")
+    def _event_handler(self):
+        """Handle socket becoming readable."""
+        try:
+            event = self.socket.recvheader(deadline=0.0)
+        except MythError as exc:
+            self._loop.remove_reader(self.socket)
+            if exc.sockcode == 54:
+                print(f"Reconnecting after error: {exc}")
+                self._loop.call_soon(self.reconnect_with_retries, True)
+                return
 
-        args = event.split("[]:[]")
+            self._log.error("FATAL error: %s", exc)
+            raise exc
+
+        try:
+            args = str(event, "utf-8").split("[]:[]")
+        except UnicodeDecodeError:
+            self._log.error("Invalid UTF-8 event: %s", event)
+            return
+
         if not args:
             self._log.error("Failed to parse BACKEND_MESSAGE: %s", event)
-            return None
+            return
         message_type, *args = args
         if message_type != "BACKEND_MESSAGE":
-            self._log.error("Event is not a BACKEND_MESSAGE: %s", event)
-            return None
+            self._log.info("Event is not a BACKEND_MESSAGE: %s", event)
+            return
         if len(args) != 2:
             self._log.error("BACKEND_MESSAGE event has incorrect number args: %s", event)
-            return None
+            return
         if args[1] != "empty":
             self._log.error("BACKEND_MESSAGE event has incorrect args[1]: %s", event)
-            return None
+            return
 
         system_event, event_name, *event_args = args[0].split(" ")
         if system_event != "SYSTEM_EVENT":
             self._log.error("BACKEND_MESSAGE is not a system event: %s", event)
-            return None
+            return
 
         event_args_kvp = dict(zip([k.lower() for k in event_args[::2]], event_args[1::2]))
 
         self._cb(event_name, event_args_kvp)
-        return None
 
 
 class MythTVBackend(Send):
@@ -115,7 +136,7 @@ class MythTVBackend(Send):
 
         if self._events:
             self._loop = self._events.loop()
-            self._event_mon = SystemEventMonitor(cb=self._system_event_thread_safe, backend=host)
+            self._event_mon = SystemEventMonitor(backend=host, port=6543, loop=self._loop, cb=self._system_event)
 
         self._frontend_restart_commands = frontend_restart_commands if frontend_restart_commands else {}
 
@@ -165,9 +186,6 @@ class MythTVBackend(Send):
     ):
         if self._events:
             self._events.emit(event, *args, **kwargs)
-
-    def _system_event_thread_safe(self, event_name: str, event_args: dict[str, str | None]):
-        self._loop.call_soon_threadsafe(self._system_event, event_name, event_args)
 
     def _system_event(self, event_name: str, event_args: dict[str, str | None]):
         if "chanid" in event_args and "starttime" in event_args:
