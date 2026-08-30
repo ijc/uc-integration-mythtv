@@ -163,14 +163,20 @@ async def on_myth_play_started(
 
 @mythevents.on(MythTVEvent.PLAY_STOPPED)
 async def on_myth_play_stopped(
-    hostname: str,
-    chanid: str,
-    starttime: str,
-    program: dict[str, Any] | None,
-    **_kwargs,
+    # hostname: str,
+    # chanid: str,
+    # starttime: str,
+    # program: dict[str, Any] | None,
+    **kwargs,
 ):
     """Handle MythTVEvent.PLAY_STOPPED."""
-    on_myth_play_status_change("stopped", hostname, chanid, starttime, program)
+    # When stopping live tv we do not get these
+    if "hostname" in kwargs and "chanid" in kwargs and "starttime" in kwargs and "program" in kwargs:
+        on_myth_play_status_change(
+            "stopped", kwargs["hostname"], kwargs["chanid"], kwargs["starttime"], kwargs["program"]
+        )
+    else:
+        _LOG.info("Myth play stopped (no program info)")
 
 
 @mythevents.on(MythTVEvent.PLAY_PAUSED)
