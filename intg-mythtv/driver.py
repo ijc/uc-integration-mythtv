@@ -168,37 +168,45 @@ def on_myth_play_state_change(
     mtv = _MYTHTV.get(hostname)
     known = "known" if mtv else "unknown"
 
-    title = program["Title"] if program else "Unknown"
+    title = program["Title"] if program else None
+    subtitle = program["SubTitle"] if program else None
     _LOG.info(
-        "Myth state change: %s: hostname=%s (%s): chanid=%s, starttime=%s title=%s",
+        "Myth state change: %s: hostname=%s (%s): chanid=%s, starttime=%s title=%s subtitle=%s",
         state,
         hostname,
         known,
         chanid,
         starttime,
-        title,
+        title if title else "Unknown",
+        subtitle,
     )
 
     if mtv:
         status = mtv.status()
         if status:
-            _LOG.info("Frontend %s status: %s", hostname, status["State"])
+            _LOG.info("Frontend[%s]: status: %s", hostname, status["State"])
         else:
-            _LOG.info("Frontend %s status: Unavailable", hostname)
+            _LOG.info("Frontend[%s]: status: Unavailable", hostname)
     else:
-        _LOG.info("Frontend %s status: Unknown frontend", hostname)
+        _LOG.info("Frontend[%s]: status: Unknown frontend", hostname)
 
-    # TODO: Figure out current media attributes
-    api.configured_entities.update_attributes(
-        hostname,
-        {
-            media_player.Attributes.STATE: state,
-            # media_player.Attributes.MEDIA_TITLE: "TESTING 123",
-            # media_player.Attributes.MEDIA_TYPE: media_player.MediaType.TVSHOW,
-            # media_player.Attributes.MEDIA_IMAGE_URL:
-            # 'http://iranon:6544/Content/GetPreviewImage?ChanId=5105&StartTime=2025-12-26T17:59:00Z&Width=360',
-        },
-    )
+    attrs: dict[str, Any] = {
+        media_player.Attributes.STATE: state,
+        media_player.Attributes.MEDIA_TITLE: "",
+        media_player.Attributes.MEDIA_IMAGE_URL: "",
+    }
+    if state in [media_player.States.PLAYING, media_player.States.PAUSED]:
+        if title:
+            if subtitle:
+                title = title + " - " + subtitle
+            attrs[media_player.Attributes.MEDIA_TITLE] = title
+        # media_player.Attributes.MEDIA_TYPE: media_player.MediaType.TVSHOW,
+        if mtv and chanid and starttime:
+            url = mtv.get_image_url(chanid, starttime)
+            _LOG.debug("Frontend[%s]: Image URL %s", hostname, url)
+            attrs[media_player.Attributes.MEDIA_IMAGE_URL] = url
+
+    api.configured_entities.update_attributes(hostname, attrs)
 
 
 @mythevents.on(MythTVEvent.PLAY_STARTED)
@@ -375,7 +383,10 @@ def features_and_commands(
     commands: dict[media_player.Commands | str, MythTVCommand],
 ) -> Tuple[list[media_player.Features], list[str]]:
     """Map MythTVCommands to UC2 media player features and simple commands."""
-    features: list[media_player.Features] = []
+    features: list[media_player.Features] = [
+        media_player.Features.MEDIA_TITLE,
+        media_player.Features.MEDIA_IMAGE_URL,
+    ]
     available_commands = {c for c in commands.keys() if isinstance(c, media_player.Commands)}
     simple_commands = commands.copy()  # Do not delete from underlying driver.
 

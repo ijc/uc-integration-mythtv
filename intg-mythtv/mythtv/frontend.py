@@ -14,13 +14,16 @@ import subprocess
 from dataclasses import dataclass
 from enum import Enum
 from subprocess import DEVNULL
-from typing import Tuple
+from typing import TYPE_CHECKING, Tuple
 
 import ucapi
 from MythTV.services_api.send import Send
 from mythtv_legacy_remote import legacy_remote_map_action_name_to_uc_simple_command
 from retry import retry
 from ucapi import media_player
+
+if TYPE_CHECKING:
+    from mythtv.backend import MythTVBackend
 
 
 class MythTVCommandKind(Enum):
@@ -178,6 +181,7 @@ class MythTVFrontend(Send):
 
     def __init__(
         self,
+        backend: "MythTVBackend",
         name: str,
         host: str,
         port: int = 6547,
@@ -185,6 +189,7 @@ class MythTVFrontend(Send):
     ):
         """Initialize the object."""
         super().__init__(host=host, port=port)
+        self._backend = backend
         self._log = logging.getLogger(__name__).getChild(name)
 
         actions = self._get_action_list()
@@ -292,11 +297,15 @@ class MythTVFrontend(Send):
         """Get the status of this frontend."""
         try:
             resp = self._status()
-            self._log.debug("response: %s", json.dumps(resp["FrontendStatus"]))
+            # self._log.debug("response: %s", json.dumps(resp["FrontendStatus"]))
             return resp["FrontendStatus"]
         except (RuntimeError, RuntimeWarning) as e:
             self._log.error("GetStatus failed: %s", e)
             return None
+
+    def get_image_url(self, chanid: str, starttime: str) -> str:
+        """Get image URL for backend."""
+        return self._backend.get_image_url(chanid, starttime)
 
 
 def run_system_command(command: str):

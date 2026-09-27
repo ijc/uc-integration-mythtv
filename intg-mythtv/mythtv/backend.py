@@ -136,7 +136,7 @@ class MythTVBackend(Send):
     ):
         """Initialize the object."""
         super().__init__(host=host, port=port)
-        self._log = logging.getLogger(__name__).getChild(host)
+        self._log = logging.getLogger(__name__).getChild(host.split(".", 1)[0])
         self._events = events
 
         if self._events:
@@ -172,6 +172,7 @@ class MythTVBackend(Send):
 
         restart_cmd = self._frontend_restart_commands.get(name, None)
         frontend = MythTVFrontend(
+            backend=self,
             name=name,
             host=f["IP"],
             port=f["Port"],
@@ -227,3 +228,16 @@ class MythTVBackend(Send):
             self._emit(Event(event_name), **event_args)
         except ValueError:
             self._emit(Event.UNKNOWN_SYSTEM_EVENT, event_name=event_name, **event_args)
+
+    def get_image_url(self, chanid: str, starttime: str) -> str:
+        """Get backend URL for preview image."""
+        # Same as Send.send
+        self.endpoint = "Content/GetPreviewImage"
+        self.postdata = None
+        self.jsondata = None
+        self.rest = f"ChanId={chanid}&StartTime={starttime}&Width=360"
+        self.opts = None
+
+        self._set_missing_opts()
+
+        return self._form_url()
