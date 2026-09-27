@@ -24,7 +24,7 @@ from mythtv import (
 )
 from ucapi import MediaPlayer, media_player, remote
 
-_LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
+_LOG = logging.getLogger("intg-mythtv")  # avoid having __main__ in log messages
 _LOOP = asyncio.new_event_loop()
 
 # Global variables
@@ -33,27 +33,45 @@ mythevents = MythTVEventBus(_LOOP)
 _MYTHTV: dict[str, MythTVFrontend] = {}
 
 
+def on_initial_update(entity_id: str, mtv: MythTVFrontend | None):
+    """Update entity attributes when new frontend is subscribed or discovered."""
+    if not mtv:
+        _LOG.warning("Frontend[%s]: initial update: not a known frontend", entity_id)
+    else:
+        status = mtv.status()
+        if status:
+            _LOG.debug("Frontend[%s]: initial update: status: %s", entity_id, status["State"])
+        else:
+            _LOG.debug("Frontend[%s]: initial update: status: unavailable", entity_id)
+
+    # TODO: Probe for current state (playing/paused/etc).
+    api.configured_entities.update_attributes(
+        entity_id,
+        {
+            media_player.Attributes.STATE: media_player.States.ON,
+            # media_player.Attributes.MEDIA_TITLE: "TESTING 123",
+            # media_player.Attributes.MEDIA_TYPE: media_player.MediaType.TVSHOW,
+            # media_player.Attributes.MEDIA_IMAGE_URL:
+            # 'http://iranon:6544/Content/GetPreviewImage?ChanId=5105&StartTime=2025-12-26T17:59:00Z&Width=360',
+        },
+    )
+
+
 @api.listens_to(ucapi.Events.CONNECT)
 async def on_connect():
     """When the UCR2 connects, all configured MythTV frontends are getting connected."""
+    _LOG.debug("ucapi: connect")
     await api.set_device_state(ucapi.DeviceStates.CONNECTED)  # just to make sure the device state is set
 
 
 @api.listens_to(ucapi.Events.SUBSCRIBE_ENTITIES)
 async def on_subscribe_entities(entity_ids) -> None:
     """When the UCR2 subscribes, assume entities are on."""
+    _LOG.debug("ucapi: subscribe %d entities", len(entity_ids))
     for entity_id in entity_ids:
+        mtv = _MYTHTV.get(entity_id)
         _LOG.debug("Frontend[%s]: subscribe", entity_id)
-        api.configured_entities.update_attributes(
-            entity_id,
-            {
-                media_player.Attributes.STATE: media_player.States.ON,
-                # media_player.Attributes.MEDIA_TITLE: "TESTING 123",
-                # media_player.Attributes.MEDIA_TYPE: media_player.MediaType.TVSHOW,
-                # media_player.Attributes.MEDIA_IMAGE_URL:
-                # 'http://iranon:6544/Content/GetPreviewImage?ChanId=5105&StartTime=2025-12-26T17:59:00Z&Width=360',
-            },
-        )
+        on_initial_update(entity_id, mtv)
 
 
 async def media_player_cmd_handler(
@@ -119,33 +137,67 @@ async def on_myth_frontend_discovered(name: str, frontend: MythTVFrontend):
 @mythevents.on(MythTVEvent.CLIENT_CONNECTED)
 async def on_myth_client_connected(hostname: str, sender: str):
     """Handle MythTVEvent.CLIENT_CONNECTED."""
-    known = "known" if hostname in _MYTHTV else "unknown"
+    mtv = _MYTHTV.get(hostname)
+    known = "known" if mtv else "unknown"
     _LOG.info("Myth client connected: hostname=%s: sender=%s (%s)", hostname, sender, known)
+    on_initial_update(hostname, mtv)
 
 
 @mythevents.on(MythTVEvent.CLIENT_DISCONNECTED)
 async def on_myth_client_disconnected(hostname: str, sender: str):
     """Handle MythTVEvent.CLIENT_DISCONNECTED."""
-    known = "known" if hostname in _MYTHTV else "unknown"
+    mtv = _MYTHTV.get(hostname)
+    known = "known" if mtv else "unknown"
     _LOG.info("Myth client disconnected: hostname=%s: sender=%s (%s)", hostname, sender, known)
+    api.configured_entities.update_attributes(
+        hostname,
+        {
+            media_player.Attributes.STATE: media_player.States.OFF,
+        },
+    )
 
 
-def on_myth_play_status_change(
-    event: str,
+def on_myth_play_state_change(
+    state: media_player.States,
     hostname: str,
-    chanid: str,
-    starttime: str,
+    chanid: str | None,
+    starttime: str | None,
     program: dict[str, Any] | None,
 ):
     """Handle MythTVEvent.PLAY_*."""
+    mtv = _MYTHTV.get(hostname)
+    known = "known" if mtv else "unknown"
+
     title = program["Title"] if program else "Unknown"
     _LOG.info(
-        "Myth play %s: hostname=%s: chanid=%s, starttime=%s title=%s",
-        event,
+        "Myth state change: %s: hostname=%s (%s): chanid=%s, starttime=%s title=%s",
+        state,
         hostname,
+        known,
         chanid,
         starttime,
         title,
+    )
+
+    if mtv:
+        status = mtv.status()
+        if status:
+            _LOG.info("Frontend %s status: %s", hostname, status["State"])
+        else:
+            _LOG.info("Frontend %s status: Unavailable", hostname)
+    else:
+        _LOG.info("Frontend %s status: Unknown frontend", hostname)
+
+    # TODO: Figure out current media attributes
+    api.configured_entities.update_attributes(
+        hostname,
+        {
+            media_player.Attributes.STATE: state,
+            # media_player.Attributes.MEDIA_TITLE: "TESTING 123",
+            # media_player.Attributes.MEDIA_TYPE: media_player.MediaType.TVSHOW,
+            # media_player.Attributes.MEDIA_IMAGE_URL:
+            # 'http://iranon:6544/Content/GetPreviewImage?ChanId=5105&StartTime=2025-12-26T17:59:00Z&Width=360',
+        },
     )
 
 
@@ -158,7 +210,7 @@ async def on_myth_play_started(
     **_kwargs,
 ):
     """Handle MythTVEvent.PLAY_STARTED."""
-    on_myth_play_status_change("started", hostname, chanid, starttime, program)
+    on_myth_play_state_change(media_player.States.PLAYING, hostname, chanid, starttime, program)
 
 
 @mythevents.on(MythTVEvent.PLAY_STOPPED)
@@ -170,13 +222,17 @@ async def on_myth_play_stopped(
     **kwargs,
 ):
     """Handle MythTVEvent.PLAY_STOPPED."""
-    # When stopping live tv we do not get these
-    if "hostname" in kwargs and "chanid" in kwargs and "starttime" in kwargs and "program" in kwargs:
-        on_myth_play_status_change(
-            "stopped", kwargs["hostname"], kwargs["chanid"], kwargs["starttime"], kwargs["program"]
+    # When stopping live tv we do not get hostname (or the rest...)
+    if "hostname" in kwargs:
+        on_myth_play_state_change(
+            media_player.States.ON,
+            kwargs["hostname"],
+            kwargs.get("chanid"),
+            kwargs.get("starttime"),
+            kwargs.get("program"),
         )
     else:
-        _LOG.info("Myth play stopped (no program info)")
+        _LOG.info("Myth play stopped (no hostname)")
 
 
 @mythevents.on(MythTVEvent.PLAY_PAUSED)
@@ -188,7 +244,7 @@ async def on_myth_play_paused(
     **_kwargs,
 ):
     """Handle MythTVEvent.PLAY_PAUSED."""
-    on_myth_play_status_change("paused", hostname, chanid, starttime, program)
+    on_myth_play_state_change(media_player.States.PAUSED, hostname, chanid, starttime, program)
 
 
 @mythevents.on(MythTVEvent.PLAY_UNPAUSED)
@@ -200,7 +256,13 @@ async def on_myth_play_unpaused(
     **_kwargs,
 ):
     """Handle MythTVEvent.PLAY_UNPAUSED."""
-    on_myth_play_status_change("unpaused", hostname, chanid, starttime, program)
+    on_myth_play_state_change(
+        media_player.States.PLAYING,  # TODO: could this also transition to stopped?
+        hostname,
+        chanid,
+        starttime,
+        program,
+    )
 
 
 @mythevents.on(MythTVEvent.UNKNOWN_SYSTEM_EVENT)
@@ -353,12 +415,17 @@ async def main():
         format="%(asctime)s.%(msecs)03d %(levelname)s %(module)s - %(funcName)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    level = os.getenv("UC_LOG_LEVEL", "DEBUG").upper()
+
+    level = os.getenv("INTG_MYTHTV_LOG_LEVEL", "DEBUG").upper()
     logging.getLogger("mythtv").setLevel(level)
     logging.getLogger("mythtv_legacy_remote").setLevel(level)
-    logging.getLogger("driver").setLevel(level)
-    logging.getLogger("ucapi").setLevel(level)
-    logging.getLogger("ucapi.api").setLevel(level)
+    logging.getLogger("intg-mythtv").setLevel(level)
+
+    uc_log_level = os.getenv("UC_LOG_LEVEL", "INFO").upper()
+    logging.getLogger("ucapi").setLevel(uc_log_level)
+    logging.getLogger("ucapi.api").setLevel(uc_log_level)
+    logging.getLogger("ucapi.entity").setLevel(uc_log_level)
+    logging.getLogger("ucapi.entities").setLevel(uc_log_level)
 
     host = os.getenv("INTG_MYTHTV_HOST", "localhost")
     port = os.getenv("INTG_MYTHTV_PORT", "6544")

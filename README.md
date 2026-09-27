@@ -28,10 +28,12 @@ MythTV (packages or installed from source).
 The integration is configured via environment variables:
 
 | Variable name                                 | Default                            |
-| --------------------------------------------- | ---------------------------------- |
+|-----------------------------------------------|------------------------------------|
 | `INTG_MYTHTV_HOST`                            | `localhost`                        |
 | `INTG_MYTHTV_PORT`                            | `6544`                             |
 | `INTG_MYTHTV_FRONTEND_<NAME>_RESTART_COMMAND` | Command to reset frontend `<NAME>` |
+| `INTG_MYTHTV_LOG_LEVEL`                       | `DEBUG`                            |
+| `UC_LOG_LEVEL`                                | `INFO`                             |
 
 See also the [environment variables][] defined in the [Python
 integration library][] to control certain runtime features like

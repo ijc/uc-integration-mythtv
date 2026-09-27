@@ -185,7 +185,7 @@ class MythTVFrontend(Send):
     ):
         """Initialize the object."""
         super().__init__(host=host, port=port)
-        self._log = logging.getLogger(f"{__name__}.{name}")
+        self._log = logging.getLogger(__name__).getChild(name)
 
         actions = self._get_action_list()
 
@@ -282,6 +282,21 @@ class MythTVFrontend(Send):
             return ucapi.StatusCodes.SERVER_ERROR
 
         return ucapi.StatusCodes.OK
+
+    @retry(RuntimeError, tries=3, delay=1)
+    def _status(self):
+        """Make status API call."""
+        return self.send("Frontend/GetStatus")
+
+    def status(self):
+        """Get the status of this frontend."""
+        try:
+            resp = self._status()
+            self._log.debug("response: %s", json.dumps(resp["FrontendStatus"]))
+            return resp["FrontendStatus"]
+        except (RuntimeError, RuntimeWarning) as e:
+            self._log.error("GetStatus failed: %s", e)
+            return None
 
 
 def run_system_command(command: str):

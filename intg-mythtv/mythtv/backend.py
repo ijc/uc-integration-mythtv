@@ -28,12 +28,17 @@ class SystemEventMonitor(BEConnection):
     _loop: AbstractEventLoop
 
     def __init__(
-        self, backend: str, port: int, loop: AbstractEventLoop, cb: Callable[[str, dict[str, str | None]], None]
+        self,
+        parent_logger: logging.Logger,
+        backend: str,
+        port: int,
+        loop: AbstractEventLoop,
+        cb: Callable[[str, dict[str, str | None]], None],
     ):
         """Create system event monitor for backend."""
         self._cb = cb
         self._loop = loop
-        self._log = logging.getLogger(f"{__name__}.{backend}.event_monitor")
+        self._log = parent_logger.getChild("event_monitor")
 
         super().__init__(backend=backend, port=port, blockshutdown=False)
 
@@ -131,12 +136,14 @@ class MythTVBackend(Send):
     ):
         """Initialize the object."""
         super().__init__(host=host, port=port)
-        self._log = logging.getLogger(f"{__name__}.{host}")
+        self._log = logging.getLogger(__name__).getChild(host)
         self._events = events
 
         if self._events:
             self._loop = self._events.loop()
-            self._event_mon = SystemEventMonitor(backend=host, port=6543, loop=self._loop, cb=self._system_event)
+            self._event_mon = SystemEventMonitor(
+                parent_logger=self._log, backend=host, port=6543, loop=self._loop, cb=self._system_event
+            )
 
         self._frontend_restart_commands = frontend_restart_commands if frontend_restart_commands else {}
 
